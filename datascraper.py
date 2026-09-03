@@ -9,13 +9,17 @@ Requirements:
     python -m playwright install chromium
 """
 
-import time, json, re, requests, os
+import time, json, re, requests, os, io
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Optional
 from datetime import datetime
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib.patches import FancyBboxPatch
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -24,16 +28,17 @@ from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
 EMAIL_CONFIG = {
     "api_url"   : "https://fiber.nuvamapis.com/email/send",
-    "x_api_key" : "UbO2ODRvx65ddZxJBmhChOsFM9CVhMwIVVuqrq40",
-    "token"     : "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjbGllbnRfaWQiOiIyczJhdmJjdjJrNXFsamdoYWF0c3I2c2c0YSIsImNsaWVudF9zZWNyZXQiOiIxMTRmMTEzbjBvdG85YnFxb2dxcm44MXRlMmkycDk0bzc4M20wbjM0ZTg4NzNqZm1nb2JtIiwic2NvcGVzIjpbIkVXTS9FYXN5RW1haWxTZW5kX3l2dnY5bzh3MjIiLCJFV00vT2F1dGgyXzd6MjM5emFvN2kiXSwiWGFwaUtleSI6WyJZODFpdURqY05lNTRNQmw3QVNETUoxdDlaMUVpZklxVTZ6U0FucDdkIiwiTjA4VklLYTBYaDVhVk54M0pvS1RiOWYyQTVjZTQ0MFUzQlFYbTZ6ZyIsIjhySjM5N1hkR0N2S3lNaFlLWmszN2VyVzAyYXRtRWo0Y2hPRlU2QzgiLCI0SnNZMmFoeVVXNHhvS0RQYktaaUU4QWdqM1dDN2lHOTZac2kwdUtMIiwiZFI1TzZVTTU0NzRuNVIzaEd5N0E1YXB3cExCWVFkQklSRVdsVTkwMCIsImIxSldGRUU4b3Q5SXRZNE9vaU1CMDg4cFltT2xsVnZvMTNtdnVCRkQiLCJ0UWZjbnZybHV3MURzRVdTZlpaMWYyWXI1UThTcjBsWTJOWkRjUmNkIiwiWWNiRlhVbGlTUWd1R2drRHBzVlY3YzRuTU45YXNSVDZqWFBPZ2xSYiIsImlPdFNaZHBpdW42bkE4QzlWRkFzUDZnSzR6MGNoeGRZNDF6eUxoeVkiLCJsNTRBR1U4MGk5MnBVODV1SmtXQ3c5WElnd2x3QmNaRjFwNXRLODBiIiwiREFQR0lGemgyWklpZTc5M0x0TzI3eklaTlhoRlZ4MWFHOVZ4enVqMCIsIjdmSmlLbkp4UmY2b2ZNNXdyeFBhaDVabUdnZkZQSXRYM01GNUtrYTAiLCJDbGh4SmE4UmpyYU9VbDFDNHlVMHU2MnBFVktMaEo2WWF",
+    "x_api_key" : os.environ.get("NUVA_API_KEY", "key"),
+    "token"     : os.environ.get("NUVA_TOKEN", "Bearer YOUR_TOKEN_HERE"),
     "from_email": "support@aimin.co",
-    "to_emails" : "athu.waze@gmail.com,harshadgupta0406@gmail.com,lakshana1803@gmail.com,s_sheldekar@yahoo.com",
+    "to_emails" : "recipient@example.com",
     "bcc_emails": None,
 }
 
 TELEGRAM_CONFIG = {
-    "bot_token": "8541819358:AAGZC0GEO-hiviIKhVDwsTuJCZRzqiSl668",
+    "bot_token": os.environ.get("TELEGRAM_BOT_TOKEN", ""),
 }
+
 # Flat file that persists bond prev levels between runs (sits next to this script)
 # Edit prev_levels.json directly to add/remove/update bonds.
 LEVELS_FILE = "prev_levels.json"
@@ -471,6 +476,7 @@ def scrape_all(prev_levels: dict):
 # ══════════════════════════════════════════════════════════════════════════════
 #  EMAIL
 # ══════════════════════════════════════════════════════════════════════════════
+
 def build_email_body(bonds: list[BondQuote], quotes: list[Quote]) -> str:
     timestamp = datetime.now().strftime("%d %b %Y, %I:%M %p")
 
@@ -522,153 +528,86 @@ def build_email_body(bonds: list[BondQuote], quotes: list[Quote]) -> str:
             </tr>"""
 
     return f"""
-        <html>
-        <head>
-        <meta name="viewport" content="width=device-width,initial-scale=1">
-        <style>
-        body{{margin:0;padding:12px;background:#f5f5f5;font-family:Arial,sans-serif;}}
-        .wrap{{max-width:480px;margin:0 auto;background:#fff;border-radius:8px;
-                box-shadow:0 2px 8px rgba(0,0,0,.08);overflow:hidden;}}
-        /* header */
-        .hdr{{background:#1a237e;padding:10px 14px;}}
-        .hdr h2{{color:#fff;margin:0;font-size:14px;}}
-        .hdr p{{color:#c5cae9;margin:3px 0 0;font-size:11px;}}
-        /* section labels */
-        .sec-hdr{{background:#e8eaf6;padding:6px 10px;font-size:11px;font-weight:700;
-                    color:#3949ab;letter-spacing:.5px;text-transform:uppercase;
-                    border-top:1px solid #dde3f0;}}
-        /* tables */
-        table{{width:100%;border-collapse:collapse;font-size:13px;}}
-        th{{background:#f0f4ff;padding:6px 7px;text-align:left;color:#555;
-            font-weight:600;border-bottom:2px solid #dde3f0;white-space:nowrap;}}
-        td{{padding:6px;border-bottom:1px solid #f0f0f0;vertical-align:middle;}}
-        .sym{{font-weight:700;white-space:nowrap;font-size:12px;}}
-        .price{{white-space:nowrap;}}
-        .prev{{color:#777;white-space:nowrap;}}
-        .chg{{font-weight:600;white-space:nowrap;}}
-        .red{{color:#c0392b;}} .grn{{color:#27ae60;}}
-        .ft{{padding:10px 14px;font-size:10px;color:#bbb;border-top:1px solid #eee;}}
-        small{{font-size:10px;opacity:.85;}}
-        </style>
-        </head>
-        <body>
-        <div class="wrap">
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{{margin:0;padding:12px;background:#f5f5f5;font-family:Arial,sans-serif;}}
+  .wrap{{max-width:480px;margin:0 auto;background:#fff;border-radius:8px;
+         box-shadow:0 2px 8px rgba(0,0,0,.08);overflow:hidden;}}
+  /* header */
+  .hdr{{background:#1a237e;padding:12px 16px;}}
+  .hdr h2{{color:#fff;margin:0;font-size:16px;}}
+  .hdr p{{color:#c5cae9;margin:3px 0 0;font-size:11px;}}
+  /* section labels */
+  .sec-hdr{{background:#e8eaf6;padding:6px 10px;font-size:11px;font-weight:700;
+             color:#3949ab;letter-spacing:.5px;text-transform:uppercase;
+             border-top:1px solid #dde3f0;}}
+  /* tables */
+  table{{width:100%;border-collapse:collapse;font-size:13px;}}
+  th{{background:#f0f4ff;padding:7px 8px;text-align:left;color:#555;
+      font-weight:600;border-bottom:2px solid #dde3f0;white-space:nowrap;}}
+  td{{padding:8px;border-bottom:1px solid #f0f0f0;vertical-align:middle;}}
+  .sym{{font-weight:700;white-space:nowrap;font-size:12px;}}
+  .price{{white-space:nowrap;}}
+  .prev{{color:#777;white-space:nowrap;}}
+  .chg{{font-weight:600;white-space:nowrap;}}
+  .red{{color:#c0392b;}} .grn{{color:#27ae60;}}
+  .ft{{padding:10px 14px;font-size:10px;color:#bbb;border-top:1px solid #eee;}}
+  small{{font-size:10px;opacity:.85;}}
+</style>
+</head>
+<body>
+<div class="wrap">
 
-        <!-- Header -->
-        <div class="hdr">
-            <h2>📊 Market Snapshot</h2>
-            <p>{timestamp}</p>
-        </div>
+  <!-- Header -->
+  <div class="hdr">
+    <h2>📊 Market Snapshot</h2>
+    <p>{timestamp}</p>
+  </div>
 
-        <!-- ── Section 1: G-Sec Bonds ── -->
-        <div class="sec-hdr">🏦 G-Sec &nbsp;·&nbsp; RBI NDS-OM</div>
-        <table>
-            <thead>
-            <tr>
-                <th>Security</th>
-                <th>Price</th>
-                <th>Yield&nbsp;%</th>
-                <th>Prev<br>Price</th>
-                <th>Prev<br>Yield&nbsp;%</th>
-            </tr>
-            </thead>
-            <tbody>{bond_rows}
-            </tbody>
-        </table>
+  <!-- ── Section 1: G-Sec Bonds ── -->
+  <div class="sec-hdr">🏦 G-Sec &nbsp;·&nbsp; RBI NDS-OM</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Security</th>
+        <th>Price</th>
+        <th>Yield&nbsp;%</th>
+        <th>Prev Price</th>
+        <th>Prev Yield&nbsp;%</th>
+      </tr>
+    </thead>
+    <tbody>{bond_rows}
+    </tbody>
+  </table>
 
-        <!-- ── Section 2: Market Prices ── -->
-        <div class="sec-hdr">🌐 Markets &nbsp;·&nbsp; TradingView</div>
-        <table>
-            <thead>
-            <tr>
-                <th>Symbol</th>
-                <th>Price</th>
-                <th>Prev</th>
-                <th>Chg&nbsp;/ %</th>
-            </tr>
-            </thead>
-            <tbody>{mkt_rows}
-            </tbody>
-        </table>
+  <!-- ── Section 2: Market Prices ── -->
+  <div class="sec-hdr">🌐 Markets &nbsp;·&nbsp; TradingView</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Symbol</th>
+        <th>Price</th>
+        <th>Prev</th>
+        <th>Chg&nbsp;/ %</th>
+      </tr>
+    </thead>
+    <tbody>{mkt_rows}
+    </tbody>
+  </table>
 
-        <div class="ft">Sources: CCIL NDS-OM &nbsp;·&nbsp; TradingView &nbsp;·&nbsp; Auto-generated</div>
-        </div>
-        </body>
-        </html>
-    """
-
-
-def send_telegram(bonds: list[BondQuote], quotes: list[Quote]) -> None:
-    token    = TELEGRAM_CONFIG["bot_token"]
-    base_url = f"https://api.telegram.org/bot{token}"
-
-    # ── Get all chat IDs ──────────────────────────────────────────────────────
-    data     = requests.get(f"{base_url}/getUpdates", timeout=10).json()
-    chat_ids = set()
-    for update in data.get("result", []):
-        msg = update.get("message") or update.get("channel_post")
-        if msg and msg.get("chat"):
-            chat_ids.add(msg["chat"]["id"])
-
-    if not chat_ids:
-        print("  No chat IDs found — has anyone messaged the bot yet?")
-        return
-
-    # ── Build message ─────────────────────────────────────────────────────────
-    ts  = datetime.now().strftime("%d %b %Y, %I:%M %p")
-    msg = f"<b>📊 Market Snapshot</b>  <i>{ts}</i>\n\n"
-
-    # Bonds
-    msg += "<b>🏦 G-Sec · RBI NDS-OM</b>\n"
-    msg += "<pre>"
-    msg += f"{'Security':<18} {'Px':>8} {'Yld':>7} {'PxPv':>8} {'YPv':>7}\n"
-    msg += "─" * 52 + "\n"
-    for b in bonds:
-        if b.error:
-            msg += f"{b.security:<18} ERROR\n"
-        else:
-            msg += (f"{b.security:<18}"
-                    f" {(b.ltp or 'N/A'):>8}"
-                    f" {(b.lty or 'N/A'):>7}"
-                    f" {(b.prev_price or 'N/A'):>8}"
-                    f" {(b.prev_yield or 'N/A'):>7}\n")
-    msg += "</pre>\n"
-
-    # Markets
-    msg += "<b>🌐 Markets · TradingView</b>\n"
-    msg += "<pre>"
-    msg += f"{'Sym':<8} {'Price':>9} {'Prev':>9} {'Chg':>7} {'%':>6}\n"
-    msg += "─" * 44 + "\n"
-    for q in quotes:
-        if q.error:
-            msg += f"{q.name:<8} ERROR\n"
-        else:
-            price = q.current_price or "N/A"
-            prev = q.previous_close or "N/A"
-            chg = q.change or "N/A"
-            pct = q.change_pct or ""
-            msg += (f"{q.name:<8}"
-                     f" {price:>9}"
-                     f" {prev:>9}"
-                     f" {chg:>7}"
-                     f" {pct:>6}\n")
-    msg += "</pre>"
-
-    # ── Send to all chats ─────────────────────────────────────────────────────
-    for chat_id in chat_ids:
-        r = requests.post(
-            f"{base_url}/sendMessage",
-            data={"chat_id": chat_id, "text": msg, "parse_mode": "HTML"},
-            timeout=20,
-        )
-        print(f"  → chat {chat_id}: {r.json().get('ok')}")
+  <div class="ft">Sources: CCIL NDS-OM &nbsp;·&nbsp; TradingView &nbsp;·&nbsp; Auto-generated</div>
+</div>
+</body>
+</html>
+"""
 
 
 def send_email(bonds: list[BondQuote], quotes: list[Quote]) -> str:
     cfg     = EMAIL_CONFIG
     subject = f"Market Snapshot — {datetime.now().strftime('%d %b %Y %I:%M %p')}"
     body    = build_email_body(bonds, quotes)
-
 
     payload = {
         "fromEmailId": cfg["from_email"],
@@ -685,14 +624,6 @@ def send_email(bonds: list[BondQuote], quotes: list[Quote]) -> str:
         "x-api-key"    : cfg["x_api_key"],
     }
 
-    user = "atharva.waze"
-    password = "Mumbai@12361"
-
-    proxies = {
-        "http": f"http://{user}:{password}@zia.nuvama.com:80",
-        "https": f"http://{user}:{password}@zia.nuvama.com:443",
-    }
-    
     response = requests.post(
         cfg["api_url"],
         data=payload,
@@ -702,6 +633,208 @@ def send_email(bonds: list[BondQuote], quotes: list[Quote]) -> str:
     )
     return response.text
 
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  TELEGRAM IMAGE + SEND
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Colours matching the email style
+C_HEADER   = "#1a237e"   # dark navy
+C_SEC_HDR  = "#3949ab"   # section header
+C_BG       = "#f5f5f5"   # outer background
+C_CARD     = "#ffffff"   # card background
+C_TH_BG    = "#e8eaf6"   # table header bg
+C_ROW_ALT  = "#f8f9ff"   # alternate row
+C_RED      = "#c0392b"
+C_GREEN    = "#27ae60"
+C_MUTED    = "#777777"
+C_TEXT     = "#222222"
+
+
+def _chg_color(val: Optional[str]) -> str:
+    if val and (val.startswith("+") or (val[0].isdigit())):
+        return C_GREEN
+    if val and (val.startswith("−") or val.startswith("-")):
+        return C_RED
+    return C_TEXT
+
+
+def build_snapshot_image(bonds: list, quotes: list) -> io.BytesIO:
+    """
+    Render the full market snapshot as a PNG (in-memory BytesIO).
+    Layout mirrors the email: navy header → G-Sec section → Markets section.
+    """
+    ts = datetime.now().strftime("%d %b %Y  %I:%M %p IST")
+
+    # ── Layout constants ──────────────────────────────────────────────────────
+    DPI       = 150
+    FW        = 8.0          # figure width in inches
+    ROW_H     = 0.32         # row height inches
+    HDR_H     = 0.7          # main header height
+    SEC_H     = 0.35         # section label height
+    TH_H      = 0.36         # table header height
+    PAD       = 0.18         # padding between sections
+
+    n_bonds  = len(bonds)
+    n_quotes = len(quotes)
+    fig_h = (HDR_H + PAD
+             + SEC_H + TH_H + n_bonds  * ROW_H + PAD
+             + SEC_H + TH_H + n_quotes * ROW_H + PAD * 0.5)
+
+    fig, ax = plt.subplots(figsize=(FW, fig_h), dpi=DPI)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, fig_h)
+    ax.axis("off")
+    fig.patch.set_facecolor(C_BG)
+
+    def y(inch):   # convert from top
+        return fig_h - inch
+
+    def rect(x, top, w, h, color, radius=0):
+        if radius:
+            r = FancyBboxPatch((x, y(top) - h), w, h,
+                               boxstyle=f"round,pad=0,rounding_size={radius}",
+                               facecolor=color, edgecolor="none", zorder=2)
+        else:
+            r = plt.Rectangle((x, y(top) - h), w, h,
+                               facecolor=color, edgecolor="none", zorder=2)
+        ax.add_patch(r)
+
+    def txt(x, top, s, size=9, color="white", ha="left", weight="normal", style="normal"):
+        ax.text(x, y(top), s, fontsize=size, color=color, ha=ha, va="top",
+                fontweight=weight, fontstyle=style, zorder=3,
+                transform=ax.transData)
+
+    def hline(top, color="#dde3f0"):
+        ax.axhline(y(top), color=color, linewidth=0.5, zorder=3)
+
+    # ── Main header ───────────────────────────────────────────────────────────
+    rect(0, 0, 1, HDR_H, C_HEADER, radius=0.02)
+    txt(0.03, 0.12, "Market Snapshot", size=13, weight="bold")
+    txt(0.03, 0.46, ts, size=8, color="#c5cae9", style="italic")
+
+    cur = HDR_H + PAD
+
+    # ── Helper: draw one table section ───────────────────────────────────────
+    def draw_section(title, col_labels, col_xs, col_has, rows_data, rows_colors):
+        nonlocal cur
+
+        # Section label
+        rect(0, cur, 1, SEC_H, C_TH_BG)
+        txt(0.03, cur + 0.06, title, size=9, color=C_SEC_HDR, weight="bold")
+        cur += SEC_H
+
+        # Table header
+        rect(0, cur, 1, TH_H, C_TH_BG)
+        hline(cur)
+        for label, cx, ha in zip(col_labels, col_xs, col_has):
+            txt(cx, cur + 0.07, label, size=7.5, color="#444444",
+                weight="bold", ha=ha)
+        cur += TH_H
+        hline(cur)
+
+        # Rows
+        for i, (cells, colors) in enumerate(zip(rows_data, rows_colors)):
+            bg = C_CARD if i % 2 == 0 else C_ROW_ALT
+            rect(0, cur, 1, ROW_H, bg)
+            for val, cx, ha, col in zip(cells, col_xs, col_has, colors):
+                txt(cx, cur + 0.07, str(val), size=8, color=col, ha=ha)
+            cur += ROW_H
+            hline(cur, "#eeeeee")
+
+        cur += PAD
+
+    # ── G-Sec section ─────────────────────────────────────────────────────────
+    bond_cols   = ["Security",    "Price",  "Yield %", "Prev Px", "Prev Yld"]
+    bond_xs     = [0.03,           0.36,     0.52,      0.68,      0.84     ]
+    bond_has    = ["left",        "right",  "right",   "right",   "right"  ]
+
+    bond_rows, bond_clrs = [], []
+    for b in bonds:
+        if b.error:
+            bond_rows.append([b.security, "ERR", "ERR", "ERR", "ERR"])
+            bond_clrs.append([C_RED] * 5)
+        else:
+            bond_rows.append([
+                b.security,
+                b.ltp        or "N/A",
+                b.lty        or "N/A",
+                b.prev_price or "N/A",
+                b.prev_yield or "N/A",
+            ])
+            bond_clrs.append([C_TEXT, C_TEXT, C_TEXT, C_MUTED, C_MUTED])
+
+    draw_section("[ G-Sec ]  RBI NDS-OM",
+                 bond_cols, bond_xs, bond_has, bond_rows, bond_clrs)
+
+    # ── Markets section ───────────────────────────────────────────────────────
+    mkt_cols  = ["Symbol",  "Price",   "Prev Close", "Change",  "%"     ]
+    mkt_xs    = [0.03,       0.26,      0.48,         0.68,      0.88   ]
+    mkt_has   = ["left",    "right",   "right",      "right",   "right" ]
+
+    mkt_rows, mkt_clrs = [], []
+    for q in quotes:
+        if q.error:
+            mkt_rows.append([q.name, "ERR", "ERR", "ERR", "ERR"])
+            mkt_clrs.append([C_RED] * 5)
+        else:
+            price = f"{q.current_price or 'N/A'} {q.currency or ''}".strip()
+            chg   = q.change     or "N/A"
+            pct   = q.change_pct or "N/A"
+            cc    = _chg_color(chg)
+            mkt_rows.append([q.name, price, q.previous_close or "N/A", chg, pct])
+            mkt_clrs.append([C_TEXT, C_TEXT, C_MUTED, cc, cc])
+
+    draw_section("[ Markets ]  TradingView",
+                 mkt_cols, mkt_xs, mkt_has, mkt_rows, mkt_clrs)
+
+    # ── Footer ────────────────────────────────────────────────────────────────
+    ax.text(0.5, y(cur), "Sources: CCIL NDS-OM  ·  TradingView  ·  Auto-generated",
+            fontsize=6.5, color=C_MUTED, ha="center", va="top", zorder=3)
+
+    plt.tight_layout(pad=0)
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", dpi=DPI, bbox_inches="tight",
+                facecolor=C_BG, edgecolor="none")
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+
+def send_telegram(bonds: list, quotes: list) -> None:
+    token    = TELEGRAM_CONFIG["bot_token"]
+    if not token:
+        print("  [skip] TELEGRAM_BOT_TOKEN not set.")
+        return
+    base_url = f"https://api.telegram.org/bot{token}"
+
+    # Get all chat IDs
+    data     = requests.get(f"{base_url}/getUpdates", timeout=10).json()
+    chat_ids = set()
+    for update in data.get("result", []):
+        msg = update.get("message") or update.get("channel_post")
+        if msg and msg.get("chat"):
+            chat_ids.add(msg["chat"]["id"])
+
+    if not chat_ids:
+        print("  No chat IDs found — has anyone messaged the bot yet?")
+        return
+
+    # Build image once, send to all chats
+    print("  Rendering snapshot image …")
+    img_buf = build_snapshot_image(bonds, quotes)
+
+    for chat_id in chat_ids:
+        img_buf.seek(0)
+        r = requests.post(
+            f"{base_url}/sendPhoto",
+            data={"chat_id": chat_id},
+            files={"photo": ("snapshot.png", img_buf, "image/png")},
+            timeout=30,
+        )
+        ok = r.json().get("ok")
+        print(f"  → chat {chat_id}: {'✓' if ok else r.text}")
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  CONSOLE OUTPUT
@@ -749,8 +882,6 @@ def save_json(bonds, quotes, path="quotes.json"):
 if __name__ == "__main__":
     # ── Load prev levels (file → seed fallback) ───────────────────────────────
     prev_levels = load_prev_levels()
-    # Bonds to extract from CCIL NDS-OM (driven by PREV_LEVELS keys)
-    TARGET_BONDS = list(prev_levels.keys())
     print(f"Loaded prev levels for {len(prev_levels)} bonds.")
 
     # ── Scrape ────────────────────────────────────────────────────────────────
@@ -770,9 +901,8 @@ if __name__ == "__main__":
         print(f"\n[info] Not EOD yet ({now_ist.strftime('%H:%M')} IST). "
               f"Prev levels unchanged.")
 
-    # ── Send email ────────────────────────────────────────────────────────────
-    # print("\nSending email …")
-    # result = send_email(bonds, quotes)
-    # print(f"API response: {result}")
-    print("\nSending Telegram message …")
+
+
+    # ── Send Telegram image ───────────────────────────────────────────────────
+    print("\nSending Telegram snapshot …")
     send_telegram(bonds, quotes)
