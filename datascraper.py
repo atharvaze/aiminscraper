@@ -765,8 +765,8 @@ if __name__ == "__main__":
               f"Prev levels unchanged.")
 
     # ── Send email ────────────────────────────────────────────────────────────
-    print("\nSending email …")
-    result = send_email(bonds, quotes)
-    print(f"API response: {result}")
+    # print("\nSending email …")
+    # result = send_email(bonds, quotes)
+    # print(f"API response: {result}")
     print("\nSending Telegram message …")
     send_telegram(bonds, quotes)
