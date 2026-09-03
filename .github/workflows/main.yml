@@ -21,12 +21,15 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install playwright requests beautifulsoup4
+          pip install playwright requests beautifulsoup4 matplotlib
           playwright install chromium
           playwright install-deps chromium
 
       - name: Run scraper
-
+        env:
+          NUVA_TOKEN:          ${{ secrets.NUVA_TOKEN }}
+          NUVA_API_KEY:        ${{ secrets.NUVA_API_KEY }}
+          TELEGRAM_BOT_TOKEN:  ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: python datascraper.py
 
       - name: Commit updated prev_levels.json
