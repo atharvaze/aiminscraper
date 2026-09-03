@@ -659,8 +659,118 @@ def _chg_color(val: Optional[str]) -> str:
         return C_RED
     return C_TEXT
 
-
 def build_snapshot_image(bonds: list, quotes: list) -> io.BytesIO:
+    BG       = "#eef0f5"
+    CARD     = "#ffffff"
+    SEC_BG   = "#eef0f5"
+    SEC_TXT  = "#2a52a0"
+    HDR_TXT  = "#888888"
+    SYM_TXT  = "#111111"
+    VAL_TXT  = "#222222"
+    PREV_TXT = "#666666"
+    TS_TXT   = "#444444"
+    RED      = "#cc2200"
+    GREEN    = "#1a7a1a"
+    DIVIDER  = "#dddddd"
+
+    def chg_color(v):
+        if not v or v == "N/A": return VAL_TXT
+        if v.startswith("+") or (v[0].isdigit()): return GREEN
+        if v.startswith("−") or v.startswith("-"): return RED
+        return VAL_TXT
+
+    DPI   = 160
+    FW    = 5.8
+    ROW_H = 0.42
+    SEC_H = 0.36
+    TH_H  = 0.36
+    PAD   = 0.12
+    TS_H  = 0.28
+
+    nb = len(bonds); nq = len(quotes)
+    FH = TS_H + PAD + SEC_H + TH_H + nb*ROW_H + PAD + SEC_H + TH_H + nq*ROW_H + PAD*0.6
+
+    fig, ax = plt.subplots(figsize=(FW, FH), dpi=DPI)
+    ax.set_xlim(0, 1); ax.set_ylim(0, FH); ax.axis("off")
+    fig.patch.set_facecolor(BG)
+
+    def yt(i): return FH - i
+    def fill(x, top, w, h, color):
+        ax.add_patch(plt.Rectangle((x,yt(top)-h),w,h,facecolor=color,edgecolor="none",zorder=1))
+    def hline(top, color=DIVIDER, lw=0.6):
+        ax.plot([0,1],[yt(top),yt(top)],color=color,lw=lw,zorder=4)
+    def t(x, top, s, size=8.5, color=VAL_TXT, ha="left", weight="normal", style="normal"):
+        ax.text(x,yt(top),str(s),fontsize=size,color=color,ha=ha,va="top",
+                fontweight=weight,fontstyle=style,zorder=5,clip_on=True)
+
+    ts = datetime.now().strftime("%d %b %Y  |  %I:%M %p IST")
+    fill(0, 0, 1, TS_H, CARD)
+    t(0.5, 0.05, ts, size=7.5, color=TS_TXT, ha="center", style="italic")
+    hline(TS_H)
+    cur = TS_H + PAD
+
+    def section(label, col_labels, col_xs, col_has, rows):
+        nonlocal cur
+        fill(0,cur,1,SEC_H,SEC_BG)
+        t(0.04, cur+0.08, label, size=9, color=SEC_TXT, weight="bold")
+        cur += SEC_H; hline(cur)
+        fill(0,cur,1,TH_H,CARD)
+        for lbl,cx,ha in zip(col_labels,col_xs,col_has):
+            t(cx, cur+0.09, lbl, size=7, color=HDR_TXT, ha=ha)
+        cur += TH_H; hline(cur)
+        for row in rows:
+            fill(0,cur,1,ROW_H,CARD)
+            for val,cx,ha,col,sz,wt in row:
+                t(cx, cur+0.09, val, size=sz, color=col, ha=ha, weight=wt)
+            cur += ROW_H; hline(cur)
+        cur += PAD
+
+    # G-Sec
+    bxs  = [0.04, 0.36, 0.53, 0.70, 0.88]
+    bhas = ["left","right","right","right","right"]
+    bhdrs = ["Security","Price","Yield %","Prev Px","Prev Yld"]
+    bond_rows = []
+    for b in bonds:
+        bond_rows.append([
+            (b.security,          bxs[0],bhas[0],SYM_TXT, 8.5,"bold"),
+            (b.ltp or "N/A",      bxs[1],bhas[1],VAL_TXT, 8.5,"normal"),
+            (b.lty or "N/A",      bxs[2],bhas[2],VAL_TXT, 8.5,"normal"),
+            (b.prev_price or "",  bxs[3],bhas[3],PREV_TXT,8,  "normal"),
+            (b.prev_yield or "",  bxs[4],bhas[4],PREV_TXT,8,  "normal"),
+        ])
+    section("G-SEC  |  RBI NDS-OM", bhdrs, bxs, bhas, bond_rows)
+
+    # Markets
+    mxs  = [0.04, 0.30, 0.57, 0.76, 0.97]
+    mhas = ["left","left","right","right","right"]
+    mhdrs = ["Symbol","Price","Prev","Chg","  %"]
+    mkt_rows = []
+    for q in quotes:
+        price = f"{q.current_price} {q.currency or ''}".strip()
+        chg   = q.change or "N/A"
+        pct   = q.change_pct or "N/A"
+        cc    = chg_color(chg)
+        mkt_rows.append([
+            (q.name,                mxs[0],mhas[0],SYM_TXT, 8.5,"bold"),
+            (price,                 mxs[1],mhas[1],VAL_TXT, 8,  "normal"),
+            (q.previous_close or "",mxs[2],mhas[2],PREV_TXT,8,  "normal"),
+            (chg,                   mxs[3],mhas[3],cc,       9,  "bold"),
+            (pct,                   mxs[4],mhas[4],cc,       7.5,"normal"),
+        ])
+    section("MARKETS  |  TRADINGVIEW", mhdrs, mxs, mhas, mkt_rows)
+
+    t(0.5, cur, "Sources: CCIL NDS-OM  ·  TradingView",
+      size=6.5, color="#bbbbbb", ha="center")
+
+    plt.tight_layout(pad=0.1)
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", dpi=DPI, bbox_inches="tight",
+                facecolor=BG, edgecolor="none")
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+def build_snapshot_imageo(bonds: list, quotes: list) -> io.BytesIO:
     """
     Render the full market snapshot as a PNG (in-memory BytesIO).
     Layout mirrors the email: navy header → G-Sec section → Markets section.
