@@ -621,32 +621,37 @@ def send_telegram(bonds: list[BondQuote], quotes: list[Quote]) -> None:
     # Bonds
     msg += "<b>🏦 G-Sec · RBI NDS-OM</b>\n"
     msg += "<pre>"
-    msg += f"{'Security':<18} {'Price':>7} {'Yld%':>6} {'PxPrev':>7} {'YldPrev':>7}\n"
-    msg += "─" * 50 + "\n"
+    msg += f"{'Security':<18} {'Px':>8} {'Yld':>7} {'PxPv':>8} {'YPv':>7}\n"
+    msg += "─" * 52 + "\n"
     for b in bonds:
         if b.error:
             msg += f"{b.security:<18} ERROR\n"
         else:
             msg += (f"{b.security:<18}"
-                    f" {b.ltp or 'N/A':>7}"
-                    f" {b.lty or 'N/A':>6}"
-                    f" {b.prev_price or 'N/A':>7}"
-                    f" {b.prev_yield or 'N/A':>7}\n")
+                    f" {(b.ltp or 'N/A'):>8}"
+                    f" {(b.lty or 'N/A'):>7}"
+                    f" {(b.prev_price or 'N/A'):>8}"
+                    f" {(b.prev_yield or 'N/A'):>7}\n")
     msg += "</pre>\n"
 
     # Markets
     msg += "<b>🌐 Markets · TradingView</b>\n"
     msg += "<pre>"
-    msg += f"{'Symbol':<10} {'Price':>10} {'Prev':>9} {'Chg':>8}\n"
-    msg += "─" * 42 + "\n"
+    msg += f"{'Sym':<8} {'Price':>9} {'Prev':>9} {'Chg':>7} {'%':>6}\n"
+    msg += "─" * 44 + "\n"
     for q in quotes:
         if q.error:
-            msg += f"{q.name:<10} ERROR\n"
+            msg += f"{q.name:<8} ERROR\n"
         else:
-            price = f"{q.current_price or 'N/A'} {q.currency or ''}".strip()
-            prev  = q.previous_close or "N/A"
-            chg   = f"{q.change or ''}{q.change_pct or ''}".strip() or "N/A"
-            msg  += f"{q.name:<10} {price:>10} {prev:>9} {chg:>8}\n"
+            price = q.current_price or "N/A"
+            prev = q.previous_close or "N/A"
+            chg = q.change or "N/A"
+            pct = q.change_pct or ""
+            msg += (f"{q.name:<8}"
+                     f" {price:>9}"
+                     f" {prev:>9}"
+                     f" {chg:>7}"
+                     f" {pct:>6}\n")
     msg += "</pre>"
 
     # ── Send to all chats ─────────────────────────────────────────────────────
@@ -657,6 +662,7 @@ def send_telegram(bonds: list[BondQuote], quotes: list[Quote]) -> None:
             timeout=20,
         )
         print(f"  → chat {chat_id}: {r.json().get('ok')}")
+
 
 def send_email(bonds: list[BondQuote], quotes: list[Quote]) -> str:
     cfg     = EMAIL_CONFIG
